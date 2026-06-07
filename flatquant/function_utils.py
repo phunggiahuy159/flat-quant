@@ -34,7 +34,18 @@ def get_init_weight(dim, ):
 
 def get_inverse(matrix):
     dtype = matrix.dtype
-    return matrix.double().inverse().to(dtype)
+    device = matrix.device
+    # Move to CPU: more numerically stable for near-singular matrices from aggressive (W1) quantization
+    m = matrix.double().cpu()
+    eye = torch.eye(m.shape[0], dtype=torch.double)
+    eps = 1e-8
+    for _ in range(6):
+        try:
+            return (m + eps * eye).inverse().to(dtype).to(device)
+        except torch._C._LinAlgError:
+            eps *= 100
+    # Last resort: pseudo-inverse with loose rcond
+    return torch.linalg.pinv(m, rcond=1e-2).to(dtype).to(device)
 
 
 def get_n_set_parameters_byname(model, required_names):

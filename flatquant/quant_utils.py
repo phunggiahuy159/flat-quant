@@ -7,10 +7,16 @@ def round_ste(x: torch.Tensor):
     return (x.round() - x).detach() + x
 
 
+def sign_ste(x: torch.Tensor):
+    """Sign function with STE: forward={-1,+1}, backward=identity (no zeros)."""
+    binary = torch.where(x >= 0, torch.ones_like(x), -torch.ones_like(x))
+    return (binary - x).detach() + x
+
+
 def get_qmin_qmax(bits, sym):
     if sym:
-        q_max = torch.tensor(2 ** (bits - 1) - 1)
-        q_min = -q_max -1
+        q_max = torch.tensor(max(1, 2 ** (bits - 1) - 1))
+        q_min = -q_max - 1
     else:
         q_max, q_min = torch.tensor(2 ** bits - 1), 0
     return q_max, q_min
@@ -18,7 +24,11 @@ def get_qmin_qmax(bits, sym):
 
 def sym_quant(x, scale, maxq):
     scale = scale.to(x.device)
-    q = torch.clamp(round_ste(x / scale), -(maxq + 1), maxq)
+    if maxq == 1:
+        # 1-bit binary: sign function with STE → exactly {-1, +1}
+        q = sign_ste(x / scale)
+    else:
+        q = torch.clamp(round_ste(x / scale), -(maxq + 1), maxq)
     return q, scale
 
 
@@ -143,7 +153,7 @@ class WeightQuantizer(torch.nn.Module):
         self.grid = grid
         self.maxshrink = maxshrink
         if sym:
-            self.maxq = torch.tensor(2**(bits-1)-1)
+            self.maxq = torch.tensor(max(1, 2**(bits-1)-1))
         else:
             self.maxq = torch.tensor(2**bits - 1)
 
